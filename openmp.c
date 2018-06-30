@@ -31,6 +31,23 @@ int main(int argc, char** argv)
 	int i;
 	double pi, x, sum = 0.0;
 	dx = 1.0 / (double) num_steps;
+	// #pragma omp parallel default(none) shared(num_steps, dx, sum)
+	// {
+	// 	#pragma omp single nowait
+	// 	printf("This will be printed by one thread.\n"); // printed by one thread, nowait makes sure other threads aren't paused
+
+	// 	double thread_sum = 0;
+
+	// 	#pragma omp for private(i, x)
+	// 	for (i = 0; i < num_steps; i++)
+	// 	{
+	// 		x = (i + 0.5) * dx;
+	// 		thread_sum += 4.0 / (1.0 + x * x);
+	// 	}
+
+	// 	#pragma omp atomic
+	// 	sum += thread_sum;
+	// }
 
 	#pragma omp parallel default(none) shared(num_steps, dx, sum) 
 	{

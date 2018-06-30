@@ -27,7 +27,7 @@ int main()
 	}
 
 	// generating random numbers
-	//#pragma omp parallel for
+	#pragma omp parallel for
 	for (i = 0; i < NUM_NUMBERS; i++)
 	{
 		int index = rand() % 100;
