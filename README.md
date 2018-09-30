@@ -80,6 +80,86 @@ Next, I generate random numbers, set the lock for the appropriate index, increme
 
 Finally, there's for loop to clean up and destroy the locks.
 
+## Advanced OpenMP
+
+#### openmp_adv: tasks
+
+This program will slightly demonstrate what OpenMP tasks are. Again, this is a slightly more advanced topic and not very frequently called upon, but useful to be familiar with nevertheless.
+
+To get started, let's discuss what Tasks are in parallel programming. Tasks have the following characteristics:
+
+* They have code to execute
+* Has some sort of data environment
+* Contains internal control variables to control that data environment, known as ICV's (things like the default number of threads, etc...)
+
+The runtime system decides when tasks are executed. Essentially, there is a task scheduler that takes care of the queue of tasks that need to be completed. The following is a basic overview of how a task is created:
+
+```C
+// generating foo() and bar() tasks
+	#pragma omp parallel
+	{
+		#pragma omp task // each thread will create a task from the subsequent structured block
+		foo();
+		#pragma omp barrier // the barrier here makes sure no thread goes past until all the previous tasks are executed
+
+		#pragma omp single // the single clause has an implied barrier at the end
+		{
+			#pragma omp task
+			bar();
+		}
+	}
+```
+
+Here, we see two common constructs for tasks. The first `parallel` section is required for OpenMP parallel programming to work in any way. The next construct, `task`, ensures that each thread that is created will schedule a task from the subsequent structured block, which in this case happens to be just one line, the function `foo()`. The `barrier` construct at the end ensures that no thread will continue past that statement until all the previous threads are completed with their tasks.
+
+The `single` ensures that only one thread will execute the code inside the block, which in this case creates a task from the function `bar()`. The OpenMP `single` construct actually implies a `barrier` at the end, so each thread will wait until the thread that has taken up the aforementioned task is done. (This behavior can again be halted by using the `nowait` construct.) Note that even though one thread creates the task in this case, that task could in turn spawn more tasks, which other threads could work on.
+
+Now, let's look at something a bit more complicated, a fibonacci solver. This sequence can easily be solved using recursion, so let's use tasks to create a sort of recursive tree of subtasks that will "fold back up" into an answer:
+
+```C
+	#pragma omp parallel
+	{
+		int fibonacci(int n)
+		{
+			int x, y;
+			if (n < 2) return n; // base case of the fibonacci sequence
+
+			#pragma omp task shared(x)
+			x = fibonacci(n - 1); // first recursive call
+
+			#pragma omp task shared(y)
+			y = fibonacci(n - 2); // second recursive call
+
+			#pragma omp taskwait
+			return x + y;
+		}
+	}
+```  
+
+This is a pretty simple layout to follow, where each task is going to recursively create more and more tasks. The only confusing part might be the use of the `shared` constructs. Simply, when `x` and `y` are declared inside the parallel region they are automatically thread private variables. Hence, without the `shared` they would remain thread private and be undefined when the function returns their sum.
+
+Now, an example of processing a linked list correctly using tasks, assuming `head` is a pointer to the head of the relevant linked list:
+
+```C
+	#pragma omp parallel
+	{
+		#pragma omp single
+		{
+			node* p = head;
+			while(p)
+			{
+				#pragma omp task firstprivate(p)
+				process(p);
+				p = p->next;
+			}
+		}
+	}
+```
+
+This example creates a `parallel` section, asks one thread to start creating tasks starting at the linked list's head, and ensures that there are no race conditions created with the `shared` variable `p` by labeling it `firstprivate` for each task. Hence, each task will have a private pointer to the relevant node it is calling the function `process()` on. Note, there will be one thread incrementing the pointer and creating tasks, the rest of the threads will be processing those scheduled tasks. Hence, a lot of time is saved.
+
+The `openmp_adv` program does a trivial simulation of this concept with pointers to a dynamically allocated integer array. The console output also attempts to show how the threads are handling work.
+
 ## Pthreads
 
 #### pthread
