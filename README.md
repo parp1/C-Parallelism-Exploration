@@ -1,6 +1,12 @@
 # C-Parallelism-Exploration
 A short exploration of OpenMP and Pthreads. The exploration is based off of an approximation of pi by taking the integral of 4 / (1 + x^2) from 0 to 1. Most of the programs can be given a command line argument specifying the number of threads to use. The default is 4.
 
+Overview:
+
+* [OpenMP](https://github.com/parp1/C-Parallelism-Exploration#openmp)
+* [Advaned OpenMP](https://github.com/parp1/C-Parallelism-Exploration#advanced-openmp)
+* [Pthreads](https://github.com/parp1/C-Parallelism-Exploration#pthreads)
+
 ## OpenMP
 
 #### openmp
