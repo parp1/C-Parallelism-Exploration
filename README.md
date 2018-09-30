@@ -31,22 +31,22 @@ The following code would be equivalent:
 
 ```C
 #pragma omp parallel default(none) shared(num_steps, dx, sum) private(thread_sum)
+{
+	#pragma omp single nowait
+	printf("This will be printed by one thread.\n"); // printed by one thread, nowait makes sure other threads aren't paused
+
+	double thread_sum = 0;
+
+	#pragma omp for private(i, x)
+	for (i = 0; i < num_steps; i++)
 	{
-		#pragma omp single nowait
-		printf("This will be printed by one thread.\n"); // printed by one thread, nowait makes sure other threads aren't paused
-
-		double thread_sum = 0;
-
-		#pragma omp for private(i, x)
-		for (i = 0; i < num_steps; i++)
-		{
-			x = (i + 0.5) * dx;
-			thread_sum += 4.0 / (1.0 + x * x);
-		}
-
-		#pragma omp atomic
-		sum += thread_sum;
+		x = (i + 0.5) * dx;
+		thread_sum += 4.0 / (1.0 + x * x);
 	}
+
+	#pragma omp atomic
+	sum += thread_sum;
+}
 ```
 
 #### lock
@@ -55,11 +55,11 @@ This program showcases the power of OpenMP's lock type. The basic premise is acc
 
 ```C
 #pragma omp parallel for
-	for (i = 0; i < 100; i++)
-	{
-		omp_init_lock(&histogram_locks[i]);
-		histogram[i] = 0;
-	}
+for (i = 0; i < 100; i++)
+{
+	omp_init_lock(&histogram_locks[i]);
+	histogram[i] = 0;
+}
 ```
 
 Here, I create the locks for each index. Since `i` is a private variable, this loop itself can be parallelized.
@@ -68,14 +68,14 @@ Next, I generate random numbers, set the lock for the appropriate index, increme
 
 ```C
 // generating random numbers
-	#pragma omp parallel for
-	for (i = 0; i < NUM_NUMBERS; i++)
-	{
-		int index = rand() % 100;
-		omp_set_lock(&histogram_locks[index]);
-		histogram[index]++;
-		omp_unset_lock(&histogram_locks[index]);
-	}
+#pragma omp parallel for
+for (i = 0; i < NUM_NUMBERS; i++)
+{
+	int index = rand() % 100;
+	omp_set_lock(&histogram_locks[index]);
+	histogram[index]++;
+	omp_unset_lock(&histogram_locks[index]);
+}
 ```
 
 Finally, there's for loop to clean up and destroy the locks.
@@ -96,18 +96,18 @@ The runtime system decides when tasks are executed. Essentially, there is a task
 
 ```C
 // generating foo() and bar() tasks
-	#pragma omp parallel
-	{
-		#pragma omp task // each thread will create a task from the subsequent structured block
-		foo();
-		#pragma omp barrier // the barrier here makes sure no thread goes past until all the previous tasks are executed
+#pragma omp parallel
+{
+	#pragma omp task // each thread will create a task from the subsequent structured block
+	foo();
+	#pragma omp barrier // the barrier here makes sure no thread goes past until all the previous tasks are executed
 
-		#pragma omp single // the single clause has an implied barrier at the end
-		{
-			#pragma omp task
-			bar();
-		}
+	#pragma omp single // the single clause has an implied barrier at the end
+	{
+		#pragma omp task
+		bar();
 	}
+}
 ```
 
 Here, we see two common constructs for tasks. The first `parallel` section is required for OpenMP parallel programming to work in any way. The next construct, `task`, ensures that each thread that is created will schedule a task from the subsequent structured block, which in this case happens to be just one line, the function `foo()`. The `barrier` construct at the end ensures that no thread will continue past that statement until all the previous threads are completed with their tasks.
@@ -117,48 +117,54 @@ The `single` ensures that only one thread will execute the code inside the block
 Now, let's look at something a bit more complicated, a fibonacci solver. This sequence can easily be solved using recursion, so let's use tasks to create a sort of recursive tree of subtasks that will "fold back up" into an answer:
 
 ```C
-	#pragma omp parallel
+#pragma omp parallel
+{
+	int fibonacci(int n)
 	{
-		int fibonacci(int n)
-		{
-			int x, y;
-			if (n < 2) return n; // base case of the fibonacci sequence
+		int x, y;
+		if (n < 2) return n; // base case of the fibonacci sequence
 
-			#pragma omp task shared(x)
-			x = fibonacci(n - 1); // first recursive call
+		#pragma omp task shared(x)
+		x = fibonacci(n - 1); // first recursive call
 
-			#pragma omp task shared(y)
-			y = fibonacci(n - 2); // second recursive call
+		#pragma omp task shared(y)
+		y = fibonacci(n - 2); // second recursive call
 
-			#pragma omp taskwait
-			return x + y;
-		}
+		#pragma omp taskwait
+		return x + y;
 	}
+}
 ```  
 
-This is a pretty simple layout to follow, where each task is going to recursively create more and more tasks. The only confusing part might be the use of the `shared` constructs. Simply, when `x` and `y` are declared inside the parallel region they are automatically thread private variables. Hence, without the `shared` they would remain thread private and be undefined when the function returns their sum.
+This is a pretty simple layout to follow, where each task is going to recursively create more and more tasks. The only confusing part might be the use of the `shared` constructs. Simply, when `x` and `y` are declared inside the parallel region they are automatically private variables. Hence, without the `shared` they would remain private and be undefined when the function returns their sum.
 
 Now, an example of processing a linked list correctly using tasks, assuming `head` is a pointer to the head of the relevant linked list:
 
 ```C
-	#pragma omp parallel
+#pragma omp parallel
+{
+	#pragma omp single
 	{
-		#pragma omp single
+		node* p = head;
+		while(p)
 		{
-			node* p = head;
-			while(p)
-			{
-				#pragma omp task firstprivate(p)
-				process(p);
-				p = p->next;
-			}
+			#pragma omp task firstprivate(p)
+			process(p);
+			p = p->next;
 		}
 	}
+}
 ```
 
 This example creates a `parallel` section, asks one thread to start creating tasks starting at the linked list's head, and ensures that there are no race conditions created with the `shared` variable `p` by labeling it `firstprivate` for each task. Hence, each task will have a private pointer to the relevant node it is calling the function `process()` on. Note, there will be one thread incrementing the pointer and creating tasks, the rest of the threads will be processing those scheduled tasks. Hence, a lot of time is saved.
 
 The `openmp_adv` program does a trivial simulation of this concept with pointers to a dynamically allocated integer array. The console output also attempts to show how the threads are handling work.
+
+To see more concepts related to advanced OpenMP, take a look at the following:
+
+* `threadprivate` variables
+* different flavors of `atomic`
+* the memory model and `flush` (pretty much not worth looking into...)
 
 ## Pthreads
 
@@ -180,10 +186,10 @@ Notice in `main()` where the necessary values are passed when the thread is crea
 
 ```C
 for (t = 0; t < NUM_THREADS; t++)
-	{
-		args[t].thread_id = t;
-		pthread_create(&thread_ids[t], NULL, thread_function, &args[t]);
-	}
+{
+	args[t].thread_id = t;
+	pthread_create(&thread_ids[t], NULL, thread_function, &args[t]);
+}
 ```
 
 #### pthread_alternative
